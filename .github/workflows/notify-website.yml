@@ -1,0 +1,39 @@
+name: Notify website
+
+# When a release is published here (a draft made public, or a release created already public),
+# ask penwise-apps to rebuild penwise.co.uk, so its download page links to the new files.
+# GitHub can't start a workflow in another repository directly, so this sends that repository a
+# `literally-release-published` repository_dispatch event, which its Website workflow listens for.
+#
+# Setup (Settings → Secrets and variables → Actions, in this repository):
+#   secret   PENWISE_APPS_DISPATCH_TOKEN   a fine-grained personal access token with
+#                                          Repository access: only penwise-apps, and
+#                                          Permissions: Contents → Read and write
+#                                          (the permission GitHub requires to send it events).
+#   variable WEBSITE_REPO                  optional; owner/name of the repository to notify.
+#                                          Defaults to penwise-apps under this repository's owner.
+
+on:
+  release:
+    types: [published]
+
+# The job only calls the GitHub API with the token above; it needs nothing from GITHUB_TOKEN.
+permissions: {}
+
+jobs:
+  notify:
+    name: Ask penwise-apps to rebuild the website
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send literally-release-published
+        env:
+          GH_TOKEN: ${{ secrets.PENWISE_APPS_DISPATCH_TOKEN }}
+          WEBSITE_REPO: ${{ vars.WEBSITE_REPO || format('{0}/penwise-apps', github.repository_owner) }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          test -n "$GH_TOKEN" || { echo 'PENWISE_APPS_DISPATCH_TOKEN is not set'; exit 1; }
+          gh api --method POST "repos/$WEBSITE_REPO/dispatches" \
+            -f event_type=literally-release-published \
+            -f "client_payload[tag]=$TAG"
+          echo "Asked $WEBSITE_REPO to rebuild the website for $TAG."
